@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using System.IO;
 
 #if UNITY_EDITOR
 
@@ -16,17 +17,19 @@ public class Pix2pixTexturizEditor : Editor {
             texturizer.Bake();
         }
 
+
         Rect rect = EditorGUILayout.GetControlRect(true, 256);
         rect.width = 256;
-        EditorGUI.DrawPreviewTexture(rect, texturizer.forwardTex);
+
+        EditorGUI.DrawPreviewTexture(rect, texturizer.forwardRTex);
 
         rect = EditorGUILayout.GetControlRect(true, 256);
         rect.width = 256;
-        EditorGUI.DrawPreviewTexture(rect, texturizer.rightTex);
+        EditorGUI.DrawPreviewTexture(rect, texturizer.rightRTex);
 
         rect = EditorGUILayout.GetControlRect(true, 256);
         rect.width = 256;
-        EditorGUI.DrawPreviewTexture(rect, texturizer.upTex);
+        EditorGUI.DrawPreviewTexture(rect, texturizer.upRTex);
     }
 
     public void OnSceneGUI() {
@@ -35,24 +38,22 @@ public class Pix2pixTexturizEditor : Editor {
 
         EditorGUI.BeginChangeCheck();
 
-        Vector3 oldForwardPos = texturizer.transform.TransformPoint(texturizer.forwardCameraPosition);
-        Vector3 oldRightPos = texturizer.transform.TransformPoint(texturizer.rightCameraPosition);
-        Vector3 oldUpPos = texturizer.transform.TransformPoint(texturizer.upCameraPosition);
+        Vector3 oldForwardPos = texturizer.transform.TransformPoint(texturizer.tpData.forwardInfo.position);
+        Vector3 oldRightPos = texturizer.transform.TransformPoint(texturizer.tpData.rightInfo.position);
+        Vector3 oldUpPos = texturizer.transform.TransformPoint(texturizer.tpData.upInfo.position);
 
         Vector3 newForwardPos = Handles.PositionHandle(oldForwardPos, Quaternion.identity);
         Vector3 newRightPos = Handles.PositionHandle(oldRightPos, Quaternion.identity);
         Vector3 newUpPos = Handles.PositionHandle(oldUpPos, Quaternion.identity);
         
         if (EditorGUI.EndChangeCheck()) {
-            Undo.RecordObject(texturizer, "Move camera handle");
-            texturizer.forwardCameraPosition = texturizer.transform.InverseTransformPoint(newForwardPos);
-            texturizer.rightCameraPosition = texturizer.transform.InverseTransformPoint(newRightPos);
-            texturizer.upCameraPosition = texturizer.transform.InverseTransformPoint(newUpPos);
+            Undo.RecordObject(texturizer, "Move triplanr pix2pix texturizer handles");
+            texturizer.tpData.forwardInfo.position = texturizer.transform.InverseTransformPoint(newForwardPos);
+            texturizer.tpData.rightInfo.position = texturizer.transform.InverseTransformPoint(newRightPos);
+            texturizer.tpData.upInfo.position = texturizer.transform.InverseTransformPoint(newUpPos);
 
             texturizer.isDirty = true;
             texturizer.Update();
-
-            // texturizer.Bake();
         }
 
     }
@@ -61,20 +62,38 @@ public class Pix2pixTexturizEditor : Editor {
 
 #endif
 
+[System.Serializable]
+public struct TextureInfo {
+    public Vector3 position;
+    [Range(10.0f, 120.0f)] public float verticalFov;
+    [Range(10.0f, 120.0f)] public float horizontalFov;
+
+    public TextureInfo(Vector3 position, float verticalFov, float horizontalFov) {
+        this.position = position;
+        this.verticalFov = verticalFov;
+        this.horizontalFov = horizontalFov;
+    }
+
+    public void Apply(Camera other) {
+        other.transform.position = position;
+        other.fieldOfView = verticalFov;
+        other.aspect = horizontalFov / verticalFov;
+    }
+}
+
 [ExecuteInEditMode]
 public class Pix2pixTexturize : MonoBehaviour {
 
-    public Camera textureComputer;
+    public Camera textureCam;
     public string weightFileName;
     public Material editorMaterial;
     public Shader triplanarShader;
-    public Vector3 forwardCameraPosition = Vector3.forward;
-    public Vector3 rightCameraPosition = Vector3.right;
-    public Vector3 upCameraPosition = Vector3.up;
 
-    public RenderTexture forwardTex;
-    public RenderTexture rightTex;
-    public RenderTexture upTex;
+    public RenderTexture forwardRTex;
+    public RenderTexture rightRTex;
+    public RenderTexture upRTex;
+
+    string guid; 
 
     public Vector2 forwardOff = Vector2.zero;
     public Vector2 forwardScale = Vector2.one;
@@ -87,43 +106,106 @@ public class Pix2pixTexturize : MonoBehaviour {
     Material triplanarMaterial;
     Renderer rend;
 
+    public TriplanarData tpData;
+
     private void OnEnable() {
         Start();
     }
 
     // Start is called before the first frame update
     void Start() {
-        bounds = new Bounds(Vector3.zero, new Vector3(Mathf.Abs(rightCameraPosition.x) * 2.0f,
-                                                            Mathf.Abs(upCameraPosition.y) * 2.0f,
-                                                            Mathf.Abs(forwardCameraPosition.z) * 2.0f));
 
         rend = GetComponent<Renderer>();
 
-        forwardTex = new RenderTexture(256, 256, 16);
-        forwardTex.enableRandomWrite = true;
-        forwardTex.filterMode = FilterMode.Point;
-        forwardTex.Create();
+        tpData = GetComponent<TriplanarData>();
+        if(tpData == null) {
+            gameObject.AddComponent<TriplanarData>();
+            tpData = GetComponent<TriplanarData>();
+        }
 
-        rightTex = new RenderTexture(256, 256, 16);
-        rightTex.enableRandomWrite = true;
-        rightTex.filterMode = FilterMode.Point;
-        rightTex.Create();
+        tpData.forwardInfo.position = Vector3.forward;
+        tpData.forwardInfo.verticalFov = textureCam.fieldOfView;
+        tpData.forwardInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
 
-        upTex = new RenderTexture(256, 256, 16);
-        upTex.enableRandomWrite = true;
-        upTex.filterMode = FilterMode.Point;
-        upTex.Create();
+        tpData.rightInfo.position = Vector3.right;
+        tpData.rightInfo.verticalFov = textureCam.fieldOfView;
+        tpData.rightInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
 
+        tpData.upInfo.position = Vector3.up;
+        tpData.rightInfo.verticalFov = textureCam.fieldOfView;
+        tpData.upInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
+    
         triplanarMaterial = new Material(triplanarShader);
 
-        InitTextures();
-    }
+        tpData.triplanarMaterial = triplanarMaterial;
 
-    void InitTextures() {
         temp = new RenderTexture(256, 256, 0);
         temp.enableRandomWrite = true;
         temp.Create();
+
+        forwardRTex = InitRTexture();
+        rightRTex = InitRTexture();
+        upRTex = InitRTexture();
+
+        tpData.forward = new Texture2D(256, 256);
+        tpData.forward.filterMode = FilterMode.Point;
+
+        tpData.right = new Texture2D(256, 256);
+        tpData.right.filterMode = FilterMode.Point;
+
+        tpData.up = new Texture2D(256, 256);
+        tpData.up.filterMode = FilterMode.Point;
+
+        textureCam.transform.position = transform.TransformPoint(tpData.forwardInfo.position);
+
+        tpData.forwardInfo.Apply(textureCam);
+
+        CopyToTpTextures(tpData);
+
+        // SaveAssets();
     }
+
+    RenderTexture InitRTexture() {
+        var ret = new RenderTexture(256, 256, 32);
+        ret.enableRandomWrite = true;
+        ret.useMipMap = true;
+        ret.Create();
+        return ret;
+    }
+
+    void CopyToTpTextures(TriplanarData tpData) {
+        Graphics.CopyTexture(forwardRTex, tpData.forward);
+        Graphics.CopyTexture(rightRTex, tpData.right);
+        Graphics.CopyTexture(upRTex, tpData.up);
+    }
+
+    void SaveAssets() {
+
+        return;
+        if(!File.Exists("Assets/Materials/Pix2pixTriplanar") || guid == null) { 
+            guid = AssetDatabase.CreateFolder("Assets/Materials/Pix2pixTriplanar", name);
+            string folderPath = AssetDatabase.GUIDToAssetPath(guid);
+            AssetDatabase.CreateAsset(tpData.forward, Path.Combine(folderPath, "forward.png"));
+            AssetDatabase.CreateAsset(tpData.right, Path.Combine(folderPath, "right.png"));
+            AssetDatabase.CreateAsset(tpData.up, Path.Combine(folderPath, "up.png"));
+            AssetDatabase.CreateAsset(triplanarMaterial, Path.Combine(folderPath, "material.mat"));
+            AssetDatabase.SaveAssets();
+        } else {
+            AssetDatabase.SaveAssets();
+        }
+    }
+
+    Texture2D RenderTextureToTexture2D(RenderTexture rtex) {
+        var result = new Texture2D(rtex.width, rtex.height);
+        Graphics.CopyTexture(rtex, result);
+        return result;
+    }
+
+    void SaveTexture(Texture2D tex, string path) {
+        byte[] bytes = tex.EncodeToPNG();
+        File.WriteAllBytes(path, bytes);
+    }
+
 
     void OnDrawGizmosSelected() {
         CalcPositons();
@@ -136,77 +218,64 @@ public class Pix2pixTexturize : MonoBehaviour {
         if (Application.isPlaying) return;
 
         // TODO: this should actually be the bounds of the camera
-        bounds = new Bounds(Vector3.zero, new Vector3(Mathf.Abs(rightCameraPosition.x) * 2.0f,
-                                                      Mathf.Abs(upCameraPosition.y) * 2.0f,
-                                                      Mathf.Abs(forwardCameraPosition.z) * 2.0f));
 
         if (isDirty) {
             rend = GetComponent<Renderer>();
             rend.sharedMaterial = editorMaterial;
 
-            var oldTex = textureComputer.targetTexture;
-            var oldPos = textureComputer.transform.position;
-            var oldRot = textureComputer.transform.rotation;
+            var oldTex = textureCam.targetTexture;
+            var oldPos = textureCam.transform.position;
+            var oldRot = textureCam.transform.rotation;
 
             //textureComputer.clearFlags = CameraClearFlags.Depth;
-            textureComputer.transform.position = transform.TransformPoint(rightCameraPosition);
-            textureComputer.transform.LookAt(this.transform);
-            textureComputer.targetTexture = rightTex;
-            textureComputer.Render();
+            tpData.rightInfo.Apply(textureCam);
+            textureCam.transform.position = transform.TransformPoint(tpData.rightInfo.position);
+            textureCam.transform.LookAt(this.transform);
+            textureCam.targetTexture = rightRTex;
+            textureCam.Render();
 
-            textureComputer.transform.position = transform.TransformPoint(upCameraPosition);
-            textureComputer.transform.LookAt(this.transform);
-            textureComputer.targetTexture = upTex;
-            textureComputer.Render();
+            tpData.upInfo.Apply(textureCam);
+            textureCam.transform.position = transform.TransformPoint(tpData.upInfo.position);
+            textureCam.transform.LookAt(this.transform);
+            textureCam.targetTexture = upRTex;
+            textureCam.Render();
 
-            textureComputer.transform.position = transform.TransformPoint(forwardCameraPosition);
-            textureComputer.transform.LookAt(this.transform);
-            textureComputer.targetTexture = forwardTex;
-            textureComputer.Render();
+            tpData.forwardInfo.Apply(textureCam);
+            textureCam.transform.position = transform.TransformPoint(tpData.forwardInfo.position);
+            textureCam.transform.LookAt(this.transform);
+            textureCam.targetTexture = forwardRTex;
+            textureCam.Render();
+
+            CopyToTpTextures(tpData);
+            rend.sharedMaterial = triplanarMaterial;
 
             //textureComputer.transform.position = oldPos;
             //textureComputer.transform.rotation = oldRot;
 
-            textureComputer.targetTexture = oldTex;
+            textureCam.targetTexture = oldTex;
 
-            SetupTriplanar();
-
-        }
-
-    }
-
-    void SetupTriplanar() {
-        if (triplanarMaterial == null) {
-            triplanarMaterial = new Material(triplanarShader);
-        }
-
-        triplanarMaterial.SetTexture("_UpTex", forwardTex);
-        triplanarMaterial.SetTexture("_RightTex", upTex);
-        triplanarMaterial.SetTexture("_ForwardTex", rightTex);
-        triplanarMaterial.SetVector("_Extents", bounds.extents);
-
-        rend.sharedMaterial = triplanarMaterial;
-
-        if (GetComponent<Material>()) {
-            GetComponent<Material>().CopyPropertiesFromMaterial(rend.sharedMaterial);
+        } else {
+            rend.sharedMaterial = triplanarMaterial;
         }
     }
 
     public void Bake(Pix2PixStandalone Pix2Pix = null) {
         var P2P = Pix2Pix ?? new Pix2PixStandalone(weightFileName);
 
-        P2P.Render(forwardTex, temp);
-        Graphics.Blit(temp, forwardTex);
+        P2P.Render(forwardRTex, temp);
+        Graphics.Blit(temp, forwardRTex);
 
-        P2P.Render(rightTex, temp);
-        Graphics.Blit(temp, rightTex);
+        P2P.Render(rightRTex, temp);
+        Graphics.Blit(temp, rightRTex);
 
-        P2P.Render(upTex, temp);
-        Graphics.Blit(temp, upTex);
+        P2P.Render(upRTex, temp);
+        Graphics.Blit(temp, upRTex);
 
         isDirty = false;
 
         if (Pix2Pix == null) P2P.Dispose();
+
+        CopyToTpTextures(tpData);
     }
 
     Color color = Color.green;

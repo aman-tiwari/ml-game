@@ -6,9 +6,18 @@ Shader "Standard Triplanar (3 Textures)"
 	Properties
 	{
 		_Color("", Color) = (1, 1, 1, 1)
+
 		_ForwardTex("", 2D) = "white" {}
+		_ForwardFov("", Vector) = (0, 0, 0, 0)
+		_ForwardPos("", Vector) = (0, 0, 0, 0)
+
 		_RightTex("", 2D) = "white" {}
+		_RightFov("", Vector) = (0, 0, 0, 0)
+		_RightPos("", Vector) = (0, 0, 0, 0)
+
 		_UpTex("", 2D) = "white" {}
+		_UpFov("", Vector) = (0, 0, 0, 0)
+		_UpPos("", Vector) = (0, 0, 0, 0)
 
 		_Extents("", Vector) = (0, 0, 0, 0)
 		_Glossiness("", Range(0, 1)) = 0.5
@@ -38,10 +47,16 @@ Shader "Standard Triplanar (3 Textures)"
 			half4 _Extents;
 			half4 _Color;
 			sampler2D _ForwardTex;
-			sampler2D _RightTex;
-			sampler2D _UpTex;
+			half4 _ForwardFov;
+			half4 _ForwardPos;
 
-			half4 _ForwardTex_ST;
+			sampler2D _RightTex;
+			half4 _RightFov;
+			half4 _RightPos;
+
+			sampler2D _UpTex;
+			half4 _UpFov;
+			half4 _UpPos;
 
 			half _Glossiness;
 			half _Metallic;
@@ -60,26 +75,38 @@ Shader "Standard Triplanar (3 Textures)"
 				float3 localNormal;
 			};
 
+#define PI (3.14159)
+#define TO_RAD(X) ((X) * 0.0174533)
+
 			void vert(inout appdata_full v, out Input data)
 			{
 				UNITY_INITIALIZE_OUTPUT(Input, data);
-				float3 xyz = v.vertex.xyz;
-				xyz.xz *= -1.0f;
-				data.localCoord = xyz + 0.5f; //(xyz / _Extents.xyz) * 0.5f + 0.5f;
+				data.localCoord = v.vertex.xyz;
 				data.localNormal = v.normal.xyz;
-
 			}
 
 			void surf(Input IN, inout SurfaceOutputStandard o)
 			{
+
 				// Blending factor of triplanar mapping
 				float3 bf = normalize(abs(IN.localNormal));
 				bf /= dot(bf, (float3)1);
 
+				float3 xyz = IN.localCoord;
+
 				// Triplanar mapping
-				float2 tx = IN.localCoord.yz * _MapScale;
-				float2 ty = IN.localCoord.zx * _MapScale;
-				float2 tz = IN.localCoord.xy * _MapScale;
+				// forward, right, up
+				float distF = length(xyz - _ForwardPos.xyz);
+				float distR = length(xyz - _RightPos.xyz);
+				float distU = length(xyz - _UpPos.xyz);
+
+				float2 planeF = 2.0 * distF / (tan(TO_RAD(90 - _ForwardFov.xy * 0.5)));
+				float2 planeR = 2.0 * distR / (tan(TO_RAD(90 - _RightFov.xy * 0.5)));
+				float2 planeU = 2.0 * distU / (tan(TO_RAD(90 - _UpFov.xy * 0.5)));
+
+				float2 tx = (xyz.zy / planeF) + 0.5;
+				float2 ty = (xyz.zx / planeR) + 0.5;
+				float2 tz = (xyz.xy / planeU) + 0.5;
 				
 				// Base color
 				half4 cx = tex2D(_ForwardTex, tx) * bf.x;
