@@ -255,7 +255,9 @@ public class Pix2pixTexturize : MonoBehaviour {
             textureCam.Render();
 
             CopyToTpTextures(tpData);
-
+            tpData.forward.filterMode = FilterMode.Point;
+            tpData.right.filterMode = FilterMode.Point;
+            tpData.up.filterMode = FilterMode.Point;
             rend.sharedMaterial = tpData.triplanarMaterial;
             ForeachChild(t => {
                 if (t.GetComponent<Renderer>()) {
@@ -297,6 +299,10 @@ public class Pix2pixTexturize : MonoBehaviour {
         isDirty = false;
 
         if (Pix2Pix == null) P2P.Dispose();
+
+        tpData.forward.filterMode = FilterMode.Bilinear;
+        tpData.right.filterMode = FilterMode.Bilinear;
+        tpData.up.filterMode = FilterMode.Bilinear;
 
         CopyToTpTextures(tpData);
     }

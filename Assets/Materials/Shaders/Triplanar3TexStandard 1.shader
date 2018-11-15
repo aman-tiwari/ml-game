@@ -97,14 +97,14 @@ Shader "Standard Triplanar (3 Textures)"
 			{
 
 				// Blending factor of triplanar mapping
-				float3 bf = normalize(abs(IN.localNormal));
+				float3 bf = normalize(abs(IN.localNormal + normalize(_Offset.xyz + 0.001) * 0.1));
 				bf *= bf; // sharpen blending edges
 				//bf *= bf;
 				bf *= bf;
 				// enforce x + y + z == 1
 				bf /= dot(bf, (float3)1);
 
-				float3 xyz = (IN.localCoord + _Offset.xyz) * _Scale;
+				float3 xyz = (IN.localCoord * _Scale + _Offset.xyz) ;
 
 				// Triplanar mapping
 				// forward, right, up
@@ -118,7 +118,7 @@ Shader "Standard Triplanar (3 Textures)"
 
 				float2 tx = (xyz.zy / planeF) + 0.5;
 				float2 ty = (xyz.zx / planeR) + 0.5;
-				float2 tz = (xyz.xy / planeU) + 0.5;
+				float2 tz = ((xyz.xy * float2(-1, 1)) / planeU) + 0.5;
 				
 				// Base color
 				half2 v = half2(1.0, 0.0);
