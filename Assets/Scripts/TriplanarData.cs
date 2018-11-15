@@ -6,6 +6,7 @@ using UnityEngine;
 public class TriplanarData : MonoBehaviour
 {
     Renderer rend;
+
     public Material triplanarMaterial;
     public TextureInfo forwardInfo;
     public Texture2D forward;
@@ -15,7 +16,8 @@ public class TriplanarData : MonoBehaviour
 
     public TextureInfo upInfo;
     public Texture2D up;
-    
+
+    public Vector3 offset = Vector3.zero;
     // Start is called before the first frame update
     void Start()
     {
@@ -25,6 +27,12 @@ public class TriplanarData : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        Matrix4x4 mat = transform.parent
+            ? transform.localToWorldMatrix * Matrix4x4.TRS(Vector3.zero, transform.parent.localRotation, Vector3.one).inverse
+            : Matrix4x4.identity;
+        triplanarMaterial.SetVector("_Scale", transform.localScale);
+        triplanarMaterial.SetMatrix("_ParentT", mat);
+        triplanarMaterial.SetVector("_Offset", offset);
         triplanarMaterial.SetTexture("_UpTex", forward);
         triplanarMaterial.SetVector("_UpFov", new Vector4(forwardInfo.horizontalFov, forwardInfo.verticalFov, 0, 0));
         triplanarMaterial.SetVector("_UpPos", (forwardInfo.position));

@@ -7,6 +7,9 @@ Shader "Standard Triplanar (3 Textures)"
 	{
 		_Color("", Color) = (1, 1, 1, 1)
 
+
+		_Offset("", Vector) = (0, 0, 0, 0)
+		_Scale("", Vector) = (0, 0, 0, 0)
 		_ForwardTex("", 2D) = "white" {}
 		_ForwardFov("", Vector) = (0, 0, 0, 0)
 		_ForwardPos("", Vector) = (0, 0, 0, 0)
@@ -44,6 +47,10 @@ Shader "Standard Triplanar (3 Textures)"
 
 			#pragma target 3.0
 
+			half4x4 _ParentT;
+
+			half4 _Scale;
+			half4 _Offset;
 			half4 _Extents;
 			half4 _Color;
 			sampler2D _ForwardTex;
@@ -81,8 +88,9 @@ Shader "Standard Triplanar (3 Textures)"
 			void vert(inout appdata_full v, out Input data)
 			{
 				UNITY_INITIALIZE_OUTPUT(Input, data);
-				data.localCoord = v.vertex.xyz;
-				data.localNormal = v.normal.xyz;
+				data.localCoord =  v.vertex.xyz;
+				//v.vertex.xyz;
+				data.localNormal = mul((float3x3)_ParentT, v.normal.xyz);
 			}
 
 			void surf(Input IN, inout SurfaceOutputStandard o)
@@ -90,9 +98,13 @@ Shader "Standard Triplanar (3 Textures)"
 
 				// Blending factor of triplanar mapping
 				float3 bf = normalize(abs(IN.localNormal));
+				bf *= bf; // sharpen blending edges
+				//bf *= bf;
+				bf *= bf;
+				// enforce x + y + z == 1
 				bf /= dot(bf, (float3)1);
 
-				float3 xyz = IN.localCoord;
+				float3 xyz = (IN.localCoord + _Offset.xyz) * _Scale;
 
 				// Triplanar mapping
 				// forward, right, up
@@ -109,6 +121,10 @@ Shader "Standard Triplanar (3 Textures)"
 				float2 tz = (xyz.xy / planeU) + 0.5;
 				
 				// Base color
+				half2 v = half2(1.0, 0.0);
+				/* half4 cx = v.xyyx * bf.x;
+				half4 cy = v.yxyx * bf.y;
+				half4 cz = v.yyxx * bf.z; */
 				half4 cx = tex2D(_ForwardTex, tx) * bf.x;
 				half4 cy = tex2D(_RightTex, ty) * bf.y;
 				half4 cz = tex2D(_UpTex, tz) * bf.z;

@@ -35,23 +35,22 @@ public class Pix2pixTexturizEditor : Editor {
     public void OnSceneGUI() {
         // get the chosen game object
         Pix2pixTexturize texturizer = target as Pix2pixTexturize;
-
+        var transform = texturizer.transform;
         EditorGUI.BeginChangeCheck();
 
         Vector3 oldForwardPos = texturizer.transform.TransformPoint(texturizer.tpData.forwardInfo.position);
         Vector3 oldRightPos = texturizer.transform.TransformPoint(texturizer.tpData.rightInfo.position);
         Vector3 oldUpPos = texturizer.transform.TransformPoint(texturizer.tpData.upInfo.position);
 
-        Vector3 newForwardPos = Handles.PositionHandle(oldForwardPos, Quaternion.identity);
-        Vector3 newRightPos = Handles.PositionHandle(oldRightPos, Quaternion.identity);
-        Vector3 newUpPos = Handles.PositionHandle(oldUpPos, Quaternion.identity);
+        Vector3 newForwardPos = Handles.PositionHandle(oldForwardPos, Quaternion.LookRotation(transform.position - oldForwardPos, transform.up));
+        Vector3 newRightPos = Handles.PositionHandle(oldRightPos, Quaternion.LookRotation(transform.position - oldRightPos, transform.up));
+        Vector3 newUpPos = Handles.PositionHandle(oldUpPos, Quaternion.LookRotation(transform.position - oldUpPos, transform.forward));
         
         if (EditorGUI.EndChangeCheck()) {
             Undo.RecordObject(texturizer, "Move triplanr pix2pix texturizer handles");
             texturizer.tpData.forwardInfo.position = texturizer.transform.InverseTransformPoint(newForwardPos);
             texturizer.tpData.rightInfo.position = texturizer.transform.InverseTransformPoint(newRightPos);
             texturizer.tpData.upInfo.position = texturizer.transform.InverseTransformPoint(newUpPos);
-
             texturizer.isDirty = true;
             texturizer.Update();
         }
@@ -102,8 +101,6 @@ public class Pix2pixTexturize : MonoBehaviour {
     [HideInInspector] public bool isDirty;
     [HideInInspector] public RenderTexture temp;
 
-    Bounds bounds;
-    Material triplanarMaterial;
     Renderer rend;
 
     public TriplanarData tpData;
@@ -112,32 +109,22 @@ public class Pix2pixTexturize : MonoBehaviour {
         Start();
     }
 
+    private void ForeachChild(System.Action<Transform> fn) {
+        var transforms = GetComponentsInChildren<Transform>();
+        foreach(var t in transforms) {
+            if(t != this.transform) {
+                fn(t);
+            }
+        }
+    }
+
     // Start is called before the first frame update
     void Start() {
 
         rend = GetComponent<Renderer>();
 
-        tpData = GetComponent<TriplanarData>();
-        if(tpData == null) {
-            gameObject.AddComponent<TriplanarData>();
-            tpData = GetComponent<TriplanarData>();
-        }
-
-        tpData.forwardInfo.position = Vector3.forward;
-        tpData.forwardInfo.verticalFov = textureCam.fieldOfView;
-        tpData.forwardInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
-
-        tpData.rightInfo.position = Vector3.right;
-        tpData.rightInfo.verticalFov = textureCam.fieldOfView;
-        tpData.rightInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
-
-        tpData.upInfo.position = Vector3.up;
-        tpData.rightInfo.verticalFov = textureCam.fieldOfView;
-        tpData.upInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
-    
-        triplanarMaterial = new Material(triplanarShader);
-
-        tpData.triplanarMaterial = triplanarMaterial;
+        SetupTpData(transform);
+        ForeachChild(SetupTpData);
 
         temp = new RenderTexture(256, 256, 0);
         temp.enableRandomWrite = true;
@@ -147,15 +134,6 @@ public class Pix2pixTexturize : MonoBehaviour {
         rightRTex = InitRTexture();
         upRTex = InitRTexture();
 
-        tpData.forward = new Texture2D(256, 256);
-        tpData.forward.filterMode = FilterMode.Point;
-
-        tpData.right = new Texture2D(256, 256);
-        tpData.right.filterMode = FilterMode.Point;
-
-        tpData.up = new Texture2D(256, 256);
-        tpData.up.filterMode = FilterMode.Point;
-
         textureCam.transform.position = transform.TransformPoint(tpData.forwardInfo.position);
 
         tpData.forwardInfo.Apply(textureCam);
@@ -163,6 +141,39 @@ public class Pix2pixTexturize : MonoBehaviour {
         CopyToTpTextures(tpData);
 
         // SaveAssets();
+    }
+
+    void SetupTpData(Transform t) {
+        if (t.GetComponent<Renderer>() == null) return;
+        var tpData = t.GetComponent<TriplanarData>();
+        if(tpData == null) {
+            tpData = t.gameObject.AddComponent<TriplanarData>();
+            tpData.forwardInfo.position = Vector3.forward;
+            tpData.forwardInfo.verticalFov = textureCam.fieldOfView;
+            tpData.forwardInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
+
+            tpData.rightInfo.position = Vector3.right;
+            tpData.rightInfo.verticalFov = textureCam.fieldOfView;
+            tpData.rightInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
+
+            tpData.upInfo.position = Vector3.up;
+            tpData.upInfo.verticalFov = textureCam.fieldOfView;
+            tpData.upInfo.horizontalFov = textureCam.fieldOfView * textureCam.aspect;
+
+            tpData.triplanarMaterial = new Material(triplanarShader);
+
+            tpData.forward = this.tpData.forward ?? new Texture2D(256, 256);
+            tpData.forward.filterMode = FilterMode.Point;
+
+            tpData.right = this.tpData.right ?? new Texture2D(256, 256);
+            tpData.right.filterMode = FilterMode.Point;
+
+            tpData.up = this.tpData.up ?? new Texture2D(256, 256);
+            tpData.up.filterMode = FilterMode.Point;
+
+            tpData.offset = t.position - this.transform.position;
+        }
+
     }
 
     RenderTexture InitRTexture() {
@@ -188,7 +199,7 @@ public class Pix2pixTexturize : MonoBehaviour {
             AssetDatabase.CreateAsset(tpData.forward, Path.Combine(folderPath, "forward.png"));
             AssetDatabase.CreateAsset(tpData.right, Path.Combine(folderPath, "right.png"));
             AssetDatabase.CreateAsset(tpData.up, Path.Combine(folderPath, "up.png"));
-            AssetDatabase.CreateAsset(triplanarMaterial, Path.Combine(folderPath, "material.mat"));
+            AssetDatabase.CreateAsset(tpData.triplanarMaterial, Path.Combine(folderPath, "material.mat"));
             AssetDatabase.SaveAssets();
         } else {
             AssetDatabase.SaveAssets();
@@ -206,22 +217,19 @@ public class Pix2pixTexturize : MonoBehaviour {
         File.WriteAllBytes(path, bytes);
     }
 
-
-    void OnDrawGizmosSelected() {
-        CalcPositons();
-        DrawBox();
-        // Gizmos.DrawWireCube(bounds.center, bounds.size);
-    }
-
     // Update is called once per frame
     public void Update() {
         if (Application.isPlaying) return;
 
-        // TODO: this should actually be the bounds of the camera
-
         if (isDirty) {
             rend = GetComponent<Renderer>();
             rend.sharedMaterial = editorMaterial;
+
+            ForeachChild(t => {
+                if (t.GetComponent<Renderer>()) {
+                    t.GetComponent<Renderer>().sharedMaterial = editorMaterial;
+                }
+            });
 
             var oldTex = textureCam.targetTexture;
             var oldPos = textureCam.transform.position;
@@ -230,32 +238,47 @@ public class Pix2pixTexturize : MonoBehaviour {
             //textureComputer.clearFlags = CameraClearFlags.Depth;
             tpData.rightInfo.Apply(textureCam);
             textureCam.transform.position = transform.TransformPoint(tpData.rightInfo.position);
-            textureCam.transform.LookAt(this.transform);
+            textureCam.transform.LookAt(this.transform, this.transform.up);
             textureCam.targetTexture = rightRTex;
             textureCam.Render();
 
             tpData.upInfo.Apply(textureCam);
             textureCam.transform.position = transform.TransformPoint(tpData.upInfo.position);
-            textureCam.transform.LookAt(this.transform);
+            textureCam.transform.LookAt(this.transform, this.transform.forward);
             textureCam.targetTexture = upRTex;
             textureCam.Render();
 
             tpData.forwardInfo.Apply(textureCam);
             textureCam.transform.position = transform.TransformPoint(tpData.forwardInfo.position);
-            textureCam.transform.LookAt(this.transform);
+            textureCam.transform.LookAt(this.transform, this.transform.up);
             textureCam.targetTexture = forwardRTex;
             textureCam.Render();
 
             CopyToTpTextures(tpData);
-            rend.sharedMaterial = triplanarMaterial;
 
+            rend.sharedMaterial = tpData.triplanarMaterial;
+            ForeachChild(t => {
+                if (t.GetComponent<Renderer>()) {
+                    t.GetComponent<Renderer>().sharedMaterial = t.GetComponent<TriplanarData>().triplanarMaterial;
+                }
+                if(t.GetComponent<TriplanarData>()) {
+                    var tpData = t.GetComponent<TriplanarData>();
+                    tpData.forwardInfo = this.tpData.forwardInfo;
+                    tpData.forward = this.tpData.forward;
+                    tpData.rightInfo = this.tpData.rightInfo;
+                    tpData.right = this.tpData.right;
+                    tpData.upInfo = this.tpData.upInfo;
+                    tpData.up = this.tpData.up;
+                    
+                }
+            });
             //textureComputer.transform.position = oldPos;
             //textureComputer.transform.rotation = oldRot;
 
             textureCam.targetTexture = oldTex;
 
         } else {
-            rend.sharedMaterial = triplanarMaterial;
+            rend.sharedMaterial = tpData.triplanarMaterial;
         }
     }
 
@@ -278,68 +301,7 @@ public class Pix2pixTexturize : MonoBehaviour {
         CopyToTpTextures(tpData);
     }
 
-    Color color = Color.green;
-
-    Vector3 v3FrontTopLeft;
-    Vector3 v3FrontTopRight;
-    Vector3 v3FrontBottomLeft;
-    Vector3 v3FrontBottomRight;
-    Vector3 v3BackTopLeft;
-    Vector3 v3BackTopRight;
-    Vector3 v3BackBottomLeft;
-    Vector3 v3BackBottomRight;
-
-    void CalcPositons() {
-
-        //Bounds bounds;
-        //BoxCollider bc = GetComponent<BoxCollider>();
-        //if (bc != null)
-        //    bounds = bc.bounds;
-        //else
-        //return;
-
-        Vector3 v3Center = bounds.center;
-        Vector3 v3Extents = bounds.extents;
-
-        v3FrontTopLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y + v3Extents.y, v3Center.z - v3Extents.z);  // Front top left corner
-        v3FrontTopRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y + v3Extents.y, v3Center.z - v3Extents.z);  // Front top right corner
-        v3FrontBottomLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y - v3Extents.y, v3Center.z - v3Extents.z);  // Front bottom left corner
-        v3FrontBottomRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y - v3Extents.y, v3Center.z - v3Extents.z);  // Front bottom right corner
-        v3BackTopLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y + v3Extents.y, v3Center.z + v3Extents.z);  // Back top left corner
-        v3BackTopRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y + v3Extents.y, v3Center.z + v3Extents.z);  // Back top right corner
-        v3BackBottomLeft = new Vector3(v3Center.x - v3Extents.x, v3Center.y - v3Extents.y, v3Center.z + v3Extents.z);  // Back bottom left corner
-        v3BackBottomRight = new Vector3(v3Center.x + v3Extents.x, v3Center.y - v3Extents.y, v3Center.z + v3Extents.z);  // Back bottom right corner
-
-        v3FrontTopLeft = transform.TransformPoint(v3FrontTopLeft);
-        v3FrontTopRight = transform.TransformPoint(v3FrontTopRight);
-        v3FrontBottomLeft = transform.TransformPoint(v3FrontBottomLeft);
-        v3FrontBottomRight = transform.TransformPoint(v3FrontBottomRight);
-        v3BackTopLeft = transform.TransformPoint(v3BackTopLeft);
-        v3BackTopRight = transform.TransformPoint(v3BackTopRight);
-        v3BackBottomLeft = transform.TransformPoint(v3BackBottomLeft);
-        v3BackBottomRight = transform.TransformPoint(v3BackBottomRight);
-    }
-
-    void DrawBox() {
-        //if (Input.GetKey (KeyCode.S)) {
-        Debug.DrawLine(v3FrontTopLeft, v3FrontTopRight, color);
-        Debug.DrawLine(v3FrontTopRight, v3FrontBottomRight, color);
-        Debug.DrawLine(v3FrontBottomRight, v3FrontBottomLeft, color);
-        Debug.DrawLine(v3FrontBottomLeft, v3FrontTopLeft, color);
-
-        Debug.DrawLine(v3BackTopLeft, v3BackTopRight, color);
-        Debug.DrawLine(v3BackTopRight, v3BackBottomRight, color);
-        Debug.DrawLine(v3BackBottomRight, v3BackBottomLeft, color);
-        Debug.DrawLine(v3BackBottomLeft, v3BackTopLeft, color);
-
-        Debug.DrawLine(v3FrontTopLeft, v3BackTopLeft, color);
-        Debug.DrawLine(v3FrontTopRight, v3BackTopRight, color);
-        Debug.DrawLine(v3FrontBottomRight, v3BackBottomRight, color);
-        Debug.DrawLine(v3FrontBottomLeft, v3BackBottomLeft, color);
-        //}
-    }
-
-    }
+}
 
     public class Pix2PixStandalone  : System.IDisposable {
 
