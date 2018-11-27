@@ -5,6 +5,7 @@ This a repository of my various experiments in using generative machine learning
 Much thanks to Keijiro Takashi for his open-source [Pix2Pix implementation for Unity](https://github.com/keijiro/Pix2Pix).  My long-term goal is to figure out a way to share 
 GPU memory between Unity and Python to enable zero-copy usage of machine learning algorithims without having to implement them using 
 compute shaders (slower than CUDNN) or copying over CPU (needs 4 CPU<->GPU syncs). 
+I have a prototype TensorRT integration in Unity: https://github.com/aman-tiwari/Unity-TensorRT. Hopefully once this is ready it can speed up this game.
 
 # Experiments so far
 * Style-transfer using ZMQ ([tweet](https://twitter.com/aman_gif/status/980956169320763392))
